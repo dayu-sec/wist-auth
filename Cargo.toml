@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Reusable bearer-token authentication + minimal role scopes + failure rate limiting (extracted from wist-center / wist-ingest-ctrl)"
+repository = "https://github.com/dayu-sec/wist-auth"
+readme = "README.md"
+keywords = ["auth", "bearer", "rate-limit", "axum", "security"]
+categories = ["authentication", "web-programming"]
+exclude = [".github/**", "target/**"]
 
 [features]
 default = []
