@@ -48,9 +48,7 @@ impl TokenConfig {
         let plain = self.token.as_deref().filter(|v| !v.trim().is_empty());
         let hash = self.token_hash.as_deref().filter(|v| !v.trim().is_empty());
         match (plain, hash) {
-            (Some(_), Some(_)) => Err(format!(
-                "auth.{role}_token 与 {role}_token_hash 只能配一个"
-            )),
+            (Some(_), Some(_)) => Err(format!("auth.{role}_token 与 {role}_token_hash 只能配一个")),
             (Some(plain), None) => Ok(Some(sha256_hex(plain))),
             (None, Some(hash)) => {
                 let hash = hash.trim().to_ascii_lowercase();

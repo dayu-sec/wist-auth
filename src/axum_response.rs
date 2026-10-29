@@ -11,6 +11,9 @@ use crate::error::AuthError;
 use crate::policy::{AuthPolicy, Scope};
 
 /// 授权；失败时直接给出可返回的 `Response`（401/403/429，均 `no-store`）。
+///
+/// axum `Response` 作为 Err 载荷是刻意设计：调用方直接 `if let Err(response) = ... { return response; }`。
+#[allow(clippy::result_large_err)]
 pub fn authorize_or_response(
     policy: &AuthPolicy,
     required: Scope,
@@ -24,8 +27,7 @@ pub fn authorize_or_response(
 
 /// `AuthError` → HTTP 响应。
 pub fn error_response(err: AuthError) -> Response {
-    let status =
-        StatusCode::from_u16(err.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let status = StatusCode::from_u16(err.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut response = (
         status,
         Json(serde_json::json!({

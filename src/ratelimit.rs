@@ -78,14 +78,14 @@ where
         let Ok(mut buckets) = self.buckets.lock() else {
             return 0;
         };
-        if buckets.len() >= self.max_buckets && !buckets.contains_key(key) {
-            if let Some(oldest) = buckets
+        if buckets.len() >= self.max_buckets
+            && !buckets.contains_key(key)
+            && let Some(oldest) = buckets
                 .iter()
                 .min_by_key(|(_, b)| b.first_failure_at)
                 .map(|(k, _)| k.clone())
-            {
-                buckets.remove(&oldest);
-            }
+        {
+            buckets.remove(&oldest);
         }
         let bucket = buckets.entry(key.clone()).or_insert(Bucket {
             failures: 0,
@@ -154,11 +154,8 @@ mod tests {
 
     #[test]
     fn custom_threshold_is_honoured() {
-        let limiter: FailureLimiter<String> = FailureLimiter::with(
-            2,
-            Duration::from_secs(60),
-            Duration::from_secs(30),
-        );
+        let limiter: FailureLimiter<String> =
+            FailureLimiter::with(2, Duration::from_secs(60), Duration::from_secs(30));
         let key = "9.9.9.9".to_string();
         limiter.record_failure(&key);
         assert!(limiter.blocked_for(&key).is_none());
