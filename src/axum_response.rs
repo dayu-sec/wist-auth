@@ -49,3 +49,96 @@ pub fn error_response(err: AuthError) -> Response {
 
     response
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::policy::TokenConfig;
+    use http::HeaderValue;
+
+    async fn body_json(response: Response) -> serde_json::Value {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        serde_json::from_slice(&bytes).expect("json")
+    }
+
+    fn policy() -> AuthPolicy {
+        AuthPolicy::new(
+            TokenConfig::from_plain("admin-secret"),
+            TokenConfig::from_plain("viewer-secret"),
+            false,
+        )
+        .expect("policy")
+    }
+
+    fn bearer(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {token}")).expect("header"),
+        );
+        headers
+    }
+
+    #[tokio::test]
+    async fn missing_token_maps_to_401_no_store() {
+        let response = error_response(AuthError::MissingToken);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        assert!(response.headers().get(header::RETRY_AFTER).is_none());
+        let body = body_json(response).await;
+        assert_eq!(body["error"]["code"], "missing_bearer_token");
+        assert!(!body["error"]["message"].as_str().unwrap_or("").is_empty());
+    }
+
+    #[tokio::test]
+    async fn invalid_token_maps_to_401() {
+        let response = error_response(AuthError::InvalidToken);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_json(response).await;
+        assert_eq!(body["error"]["code"], "invalid_bearer_token");
+    }
+
+    #[tokio::test]
+    async fn forbidden_maps_to_403() {
+        let response = error_response(AuthError::Forbidden);
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = body_json(response).await;
+        assert_eq!(body["error"]["code"], "insufficient_scope");
+    }
+
+    #[tokio::test]
+    async fn rate_limited_maps_to_429_with_retry_after() {
+        let response = error_response(AuthError::RateLimited {
+            retry_after_secs: 42,
+        });
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers().get(header::RETRY_AFTER).unwrap(), "42");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        let body = body_json(response).await;
+        assert_eq!(body["error"]["code"], "auth_rate_limited");
+    }
+
+    #[test]
+    fn authorize_or_response_passes_the_scope_through() {
+        let scope =
+            authorize_or_response(&policy(), Scope::Admin, &bearer("admin-secret"), "1.1.1.1")
+                .expect("authorized");
+        assert_eq!(scope, Scope::Admin);
+    }
+
+    #[test]
+    fn authorize_or_response_returns_a_ready_response_on_failure() {
+        let response =
+            authorize_or_response(&policy(), Scope::Admin, &bearer("viewer-secret"), "1.1.1.1")
+                .expect_err("must fail");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+}

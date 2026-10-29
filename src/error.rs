@@ -77,4 +77,35 @@ mod tests {
             429
         );
     }
+
+    #[test]
+    fn messages_are_present_and_distinct() {
+        let all = [
+            AuthError::MissingToken,
+            AuthError::InvalidToken,
+            AuthError::Forbidden,
+            AuthError::RateLimited {
+                retry_after_secs: 1,
+            },
+        ];
+        let mut messages: Vec<_> = all.iter().map(|e| e.message()).collect();
+        assert!(messages.iter().all(|m| !m.is_empty()));
+        messages.sort_unstable();
+        messages.dedup();
+        assert_eq!(messages.len(), all.len());
+    }
+
+    #[test]
+    fn only_rate_limited_carries_retry_after() {
+        assert_eq!(AuthError::MissingToken.retry_after_secs(), None);
+        assert_eq!(AuthError::InvalidToken.retry_after_secs(), None);
+        assert_eq!(AuthError::Forbidden.retry_after_secs(), None);
+        assert_eq!(
+            AuthError::RateLimited {
+                retry_after_secs: 7
+            }
+            .retry_after_secs(),
+            Some(7)
+        );
+    }
 }
