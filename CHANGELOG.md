@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- feature `credential`：验证侧的凭据登记表 `CredentialStore`（对上 `wist-cred` 的签发侧）
+  - 只存 `sha256` 摘要，明文永不落盘；落盘 `0640`、临时文件 + rename；
+  - `revision` 单调：低 revision 的 `register` 被拒，撤销后无法复活；
+  - X 裁剪 C 的提议（D9）：`roles ∩ known_roles`、TTL 按角色上限取 min、`resources` 可选取交集；
+  - `audience` 必校、过期带时钟偏移、撤销幂等；错误带稳定 `code` / `status`。
+- 示例 `verify_credential`：读一张登记表 + 一条 token，本地判定能否使用（退出码 0/1）。
+- 测试 61 → **74**。
+
 ## [0.1.1] - 2026-10-29
 
 ### Fixed（5 轮 review 发现）

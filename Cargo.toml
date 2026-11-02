@@ -14,6 +14,12 @@ exclude = [".github/**", "target/**"]
 default = []
 serde = ["dep:serde"]
 axum = ["dep:axum", "dep:serde_json"]
+# 凭据登记表（验证侧）：校验 `register` 推来的摘要，本地按表比对。
+credential = ["dep:serde", "dep:serde_json"]
+
+[[example]]
+name = "verify_credential"
+required-features = ["credential"]
 
 [dependencies]
 axum = { version = "0.8", optional = true }

@@ -56,6 +56,33 @@ viewer_token_hash = "<64 hex>"
 allow_anonymous = false
 ```
 
+`credential` feature 提供**验证侧**的凭据登记表（`wist-cred` 签发，X 侧本地验证）：
+
+```rust
+use wist_auth::credential::{CredentialStore, StoreParams};
+
+let store = CredentialStore::open("state/credentials.json", StoreParams {
+    known_roles: vec!["investigation:run".into()],
+    ..Default::default()
+})?;
+
+store.register(entry)?;                              // 收 register，返回裁剪后的 effective
+let subject = store.verify(token, "wist-center")?;   // 纯本地，无网络往返
+store.revoke("cred_1", 2, now)?;                     // 收 revoke（幂等）
+```
+
+- 只存 `sha256` 摘要，**明文永不落盘**；落盘 `0640`、临时文件 + rename；
+- `revision` 单调：低 revision 的 `register` 被拒，撤销后无法复活；
+- **X 裁剪 C 的提议**：`roles ∩ known_roles`、TTL 按角色上限取 min、`resources` 可选取交集；
+- `audience` 必校、过期带时钟偏移；`CredentialError` 带稳定 `code()` / `status()`。
+
+不联网的验证示例（拿一条 token + 一张表，直接判定）：
+
+```sh
+cargo run --features credential --example verify_credential -- \
+  --store ./credentials.json --token "wcr_..." --audience wist-center
+```
+
 ## 测试
 
 ```bash

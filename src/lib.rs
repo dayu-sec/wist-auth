@@ -13,6 +13,9 @@ pub mod policy;
 pub mod ratelimit;
 pub mod token;
 
+#[cfg(feature = "credential")]
+pub mod credential;
+
 #[cfg(feature = "serde")]
 pub mod config;
 
@@ -27,6 +30,11 @@ pub use token::{bearer_token, constant_time_eq, sha256_hex, token_matches};
 
 #[cfg(feature = "serde")]
 pub use config::AuthConfig;
+
+#[cfg(feature = "credential")]
+pub use credential::{
+    CredentialEntry, CredentialError, CredentialStore, StoreParams, VerifiedCredential,
+};
 
 #[cfg(feature = "axum")]
 pub use axum_response::{authorize_or_response, error_response};
