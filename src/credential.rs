@@ -206,6 +206,8 @@ impl CredentialStore {
     }
 
     /// 登记一条凭据，返回**裁剪后的实际生效值**（对应 `register` 的 `effective` 回告）。
+    ///
+    /// 落盘失败会**回滚内存**：否则会变成“X 在验、C 以为没交付、重启后又消失”。
     pub fn register(&self, entry: CredentialEntry) -> Result<CredentialEntry, CredentialError> {
         let entry = self.normalize(entry)?;
         let mut state = self.write_state();
@@ -221,13 +223,35 @@ impl CredentialStore {
             });
         }
         let effective = self.trim(entry);
+        let slot = state
+            .credentials
+            .iter()
+            .position(|item| item.credential_id == effective.credential_id);
+        let previous = slot.map(|index| state.credentials[index].clone());
+        let previous_revision = state.revision;
+
         self.upsert(&mut state, effective.clone());
         state.revision += 1;
-        self.persist(&state)?;
+        if let Err(error) = self.persist(&state) {
+            match (slot, previous) {
+                (Some(index), Some(previous)) => state.credentials[index] = previous,
+                // `upsert` 是新条目时追加在末尾。
+                (None, _) => {
+                    state.credentials.pop();
+                }
+                // 槽位在、旧值不在：不会发生，保守地不动。
+                _ => {}
+            }
+            state.revision = previous_revision;
+            return Err(error);
+        }
         Ok(effective)
     }
 
     /// 撤销：幂等；`revision` 必须大于本地记录。
+    ///
+    /// 落盘失败会**回滚内存**：否则内存里已撤、磁盘上没撤，重启后 token 会“复活”——
+    /// 而 C 那边已经认为撤销成功了（它不回滚本地状态，D12）。
     pub fn revoke(
         &self,
         credential_id: &str,
@@ -251,12 +275,17 @@ impl CredentialStore {
                 incoming: revision,
             });
         }
+        let previous = state.credentials[index].clone();
+        let previous_revision = state.revision;
         state.credentials[index].revoked_at = Some(at);
         state.credentials[index].revision = revision;
-        let updated = state.credentials[index].clone();
         state.revision += 1;
-        self.persist(&state)?;
-        Ok(Some(updated))
+        if let Err(error) = self.persist(&state) {
+            state.credentials[index] = previous;
+            state.revision = previous_revision;
+            return Err(error);
+        }
+        Ok(Some(state.credentials[index].clone()))
     }
 
     /// 验一张凭据：**纯本地**，无网络往返。
@@ -655,6 +684,54 @@ mod tests {
         assert!(!text.contains(TOKEN));
         assert!(text.contains(&sha256_hex(TOKEN)));
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 让 `persist` 注定失败：用一个同名目录占住 `<file>.tmp`。
+    fn blocked_store(tag: &str) -> (PathBuf, PathBuf, CredentialStore) {
+        let dir = std::env::temp_dir().join(format!(
+            "wist-auth-cred-blocked-{tag}-{}",
+            std::process::id()
+        ));
+        let path = dir.join("credentials.json");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let store = CredentialStore::open(&path, params()).unwrap();
+        fs::create_dir(path.with_extension("tmp")).unwrap();
+        (dir, path, store)
+    }
+
+    #[test]
+    fn a_failed_persist_rolls_back_a_registration() {
+        // 落盘失败时不能“内存里已经生效”：否则 C 认为没交付，重启后它又消失。
+        let (dir, _path, store) = blocked_store("register");
+        let error = store.register(entry(1)).expect_err("persist must fail");
+        assert!(matches!(error, CredentialError::Store(_)), "{error:?}");
+        assert!(
+            store.entries().is_empty(),
+            "registration must be rolled back"
+        );
+        assert!(store.verify(TOKEN, "wist-center").is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_persist_rolls_back_a_revocation() {
+        // 更严重的一条：内存已撤、磁盘没撤 → 重启后 token 复活，而 C 已认为撤成功。
+        let (dir, path, store) = blocked_store("revoke");
+        let tmp = path.with_extension("tmp");
+        fs::remove_dir(&tmp).unwrap();
+        store.register(entry(1)).expect("register");
+        fs::create_dir(&tmp).unwrap(); // 从这里开始落盘失败
+
+        let error = store
+            .revoke("cred_1", 2, now_secs())
+            .expect_err("persist must fail");
+        assert!(matches!(error, CredentialError::Store(_)), "{error:?}");
+        let kept = &store.entries()[0];
+        assert_eq!(kept.revoked_at, None, "revocation must be rolled back");
+        assert_eq!(kept.revision, 1);
+        assert!(store.verify(TOKEN, "wist-center").is_ok());
         let _ = fs::remove_dir_all(&dir);
     }
 }
