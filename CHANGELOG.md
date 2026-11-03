@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.3.0] - 2026-11-03
+
+### Added（授权记录签名：Ed25519）
+
+- 新特性 `signing`：授权记录的签名契约。签发方（`wist-cred`）对每条记录签名，
+  验证方（X）在**收到时**和**从磁盘加载时**各验一次。
+  - 规范字节固定、字段带长度前缀、角色/资源排序去重，避免两端序列化差异。
+  - 签名覆盖凭据指纹、主体、角色、资源、受众、有效期、版本号与撤销状态 ——
+    改 `roles` / 延长 `expires_at` / 清掉 `revoked_at` 都会被识别。
+  - 提供 `sign` / `verify` / `public_key_from_pkcs8` / `parse_public_key_hex`；
+    私钥用 PKCS#8（v1/v2 都接受，OpenSSL 默认产出的 v1 也能用）。
+  - 支持**多把公钥**（轮换期同时信任新旧）；`verify` 任一验过即通过。
+  - 覆盖测试：换摘要、撤销状态回滚、异钥撤销、多钥轮换 —— 都必须被发现。
+
+### Changed（`credential`）
+
+- `CredentialEntry` 新增 `signature: Option<String>`（小写 hex）。
+- `StoreParams` 新增 `require_signature` 与 `issuer_public_keys`（裸 32 字节 Ed25519 公钥）。
+  `require_signature = true` 时：`register` 缺签名/验不过直接拒收；加载时验不过的记录丢弃，
+  可通过 `CredentialStore::rejected_on_load()` 查看条数。
+- **裁剪时机前移**：磁盘上存签发方签过的**原始**授权（含签名），角色 / TTL / 资源裁剪
+  改为在 `verify` 时应用。这样本服务的策略变化不需要签发方重签。
+- TTL 上限改为相对 `issued_at` 计算（此前相对“登记时刻”，每次加载都会把过期时间往后推）。
+- `CredentialStore::revoke` 新增 `signature` 参数：撤销也要签发方签名，签名覆盖“已撤销”的记录。
+
+> 0.x 的破坏性变更：`CredentialEntry` / `StoreParams` 的字段新增、`revoke` 的参数新增。
+
 ## [0.2.0] - 2026-11-03
 
 ### Added

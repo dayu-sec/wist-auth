@@ -16,6 +16,11 @@ pub mod token;
 #[cfg(feature = "credential")]
 pub mod credential;
 
+/// 授权记录的签名契约（Ed25519）：签发方签、验证方验。
+/// 依赖 `credential`（记录形状），两者必须一起开。
+#[cfg(all(feature = "credential", feature = "signing"))]
+pub mod signing;
+
 #[cfg(feature = "serde")]
 pub mod config;
 

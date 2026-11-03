@@ -68,13 +68,28 @@ let store = CredentialStore::open("state/credentials.json", StoreParams {
 
 store.register(entry)?;                              // 收 register，返回裁剪后的 effective
 let subject = store.verify(token, "wist-center")?;   // 纯本地，无网络往返
-store.revoke("cred_1", 2, now)?;                     // 收 revoke（幂等）
+store.revoke("cred_1", 2, now, signature)?;          // 收 revoke（幂等；开验签时带签名）
 ```
 
 - 只存 `sha256` 摘要，**明文永不落盘**；落盘 `0640`、临时文件 + rename；
 - `revision` 单调：低 revision 的 `register` 被拒，撤销后无法复活；
 - **X 裁剪 C 的提议**：`roles ∩ known_roles`、TTL 按角色上限取 min、`resources` 可选取交集；
 - `audience` 必校、过期带时钟偏移；`CredentialError` 带稳定 `code()` / `status()`。
+
+`signing` feature（同时开 `credential`）提供**授权记录的签名契约**（Ed25519）：
+
+```rust
+use wist_auth::signing;
+
+let signature = signing::sign(&entry, &pkcs8)?;
+assert!(signing::verify(&entry, &signature, &[public_key]));
+```
+
+- 签名覆盖凭据指纹、主体、角色、资源、受众、有效期、版本号与撤销状态；
+- 规范字节固定、字段带长度前缀、角色 / 资源排序去重，签发与验证用同一份；
+- `StoreParams { require_signature: true, issuer_public_keys }` 开启后：
+  `register` 拒收无签名 / 验不过的记录；从磁盘加载时验不过的直接丢弃
+  （`rejected_on_load()` 可观测）。
 
 不联网的验证示例（拿一条 token + 一张表，直接判定）：
 

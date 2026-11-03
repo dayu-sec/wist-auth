@@ -1,6 +1,6 @@
 [package]
 name = "wist-auth"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Reusable bearer-token authentication + minimal role scopes + failure rate limiting (extracted from wist-center / wist-ingest-ctrl)"
@@ -15,7 +15,10 @@ default = []
 serde = ["dep:serde"]
 axum = ["dep:axum", "dep:serde_json"]
 # 凭据登记表（验证侧）：校验 `register` 推来的摘要，本地按表比对。
-credential = ["dep:serde", "dep:serde_json"]
+credential = ["dep:serde", "dep:serde_json", "signing"]
+# 授权记录的**签名契约**（Ed25519）：签发方签、验证方验。
+# 与 `credential` 一起用时，登记表在收到和从磁盘加载时都会验签。
+signing = ["dep:ring"]
 
 [[example]]
 name = "verify_credential"
@@ -27,6 +30,8 @@ http = "1"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 sha2 = "0.10"
+# Ed25519 签名 / 验签。只用到最基本的原语，不再引整套 PKI 库。
+ring = { version = "0.17", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
